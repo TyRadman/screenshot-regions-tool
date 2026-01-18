@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEditor;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 
 [CustomEditor(typeof(CameraScreenshotService))]
@@ -36,11 +38,15 @@ public class CameraScreenshotServiceEditor : Editor
     private Texture _stretchYTexture;
     private Texture _sliceXTexture;
     private Texture _sliceYTexture;
+    private Texture _gearTexture;
+    private Texture _configTexture;
 
     private GUIStyle _titleStyle;
     private GUIStyle _indexStyle;
     private GUIStyle _dimStyle;
     private GUIStyle _arrowLabel;
+
+    private int _slicesCount = 0;
 
     private Texture2D _playModePreview;
     private bool _showPlayModePreview;
@@ -77,6 +83,8 @@ public class CameraScreenshotServiceEditor : Editor
         _stretchYTexture = GetTexture("Icons/T_Stretch_Y.png");
         _sliceXTexture = GetTexture("Icons/T_Slice_X.png");
         _sliceYTexture = GetTexture("Icons/T_Slice_Y.png");
+        _gearTexture = GetTexture("Icons/T_Settings.png");
+        _configTexture = GetTexture("Icons/T_Configs.png");
 
         EditorApplication.playModeStateChanged += OnPlayModeChanged;
     }
@@ -152,25 +160,76 @@ public class CameraScreenshotServiceEditor : Editor
         }
     }
 
+    private bool _resized = true;
+
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();
 
         InitStyles();
 
-        GUILayout.Space(20);
-        EditorGUILayout.HelpBox("\nAdd values to the regions list and new regions will appear in the screens graph.\n\nChanging the resolution, adding or removing regions, or using the controls will ruin your layouts. Be careful!\n", MessageType.Info);
+        EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
+        GUILayout.Space(10);
+        GUILayout.Label("Editor", _titleStyle);
         GUILayout.Space(5);
-        GUILayout.Label("Editor", _titleStyle, GUILayout.MaxWidth(150));
+        EditorGUILayout.HelpBox("\nAdd values to the regions list and new regions will appear in the screens graph.\n\nChanging the resolution, adding or removing regions, or using the controls will ruin your layouts. Be careful!\n", MessageType.Info);
         GUILayout.Space(30);
         CameraScreenshotService service = (CameraScreenshotService)target;
 
+        ////// CONFIGURATIONS TITLE //////
+        GUIContent configsContent = new GUIContent("Configurations", _configTexture);
+        GUILayout.Label(configsContent, _titleStyle);
+        GUILayout.Space(10);
+
+        ////// RESOLUTION //////
         // cap the resolution to not have negative values. They act weird
         _resolution = service.CaptureResolution;
+        _resolution = EditorGUILayout.Vector2IntField("Resolution", _resolution);
         _resolution.x = Mathf.Max(_resolution.x, 1);
         _resolution.y = Mathf.Max(_resolution.y, 1);
-        service.SetResolution(_resolution);
+        service.CaptureResolution = _resolution;
 
+        ////// OUTPUT FOLDER //////
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Output folder"))
+        {
+            string selected = EditorUtility.OpenFolderPanel(
+                "Select Screenshot Output Folder",
+                string.IsNullOrEmpty(service.OutputFolder) ? Application.dataPath : service.OutputFolder,
+                ""
+            );
+
+            if (!string.IsNullOrEmpty(selected))
+            {
+                service.OutputFolder = selected;
+                EditorUtility.SetDirty(service);
+            }
+        }
+        EditorGUILayout.SelectableLabel(
+            string.IsNullOrEmpty(service.OutputFolder) ? "<not set>" : service.OutputFolder, 
+            EditorStyles.textField, 
+            GUILayout.Height(EditorGUIUtility.singleLineHeight));
+        GUILayout.EndHorizontal();
+
+        ////// REGIONS COUNT //////
+        _slicesCount = service.Regions.Length;
+        _slicesCount = Mathf.Max(0, EditorGUILayout.IntField("Regions count", _slicesCount));
+
+        if(_slicesCount != service.Regions.Length)
+        {
+            service.Regions = new ScreenShotData[_slicesCount];
+            System.Array.ForEach(service.Regions, r => r = new ScreenShotData());
+            EditorUtility.SetDirty(service);
+            GUI.changed = true;
+            _resized = false;
+        }
+
+        GUILayout.Space(10);
+        EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
+
+        GUILayout.Space(30);
+
+        ////// GRAPH //////
         // draw the graph with the resolution and aspect ratio arrows
         Rect graphRect = Draw(_resolution, EditorGUIUtility.currentViewWidth);
 
@@ -242,7 +301,7 @@ public class CameraScreenshotServiceEditor : Editor
             DrawRegionFromHandles(v.Value, graphRect);
         }
 
-
+        ////// RUNTIME CONTROLS //////
         if (Application.isPlaying)
         {
             GUILayout.Space(10);
@@ -274,43 +333,53 @@ public class CameraScreenshotServiceEditor : Editor
 
         GUILayout.Space(10);
 
+        ////// CONTROLS //////
         // render the controls
-        GUILayout.Label("", GUI.skin.horizontalScrollbar);
-        GUILayout.Label("Controls");
+        EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
+        GUIContent content = new GUIContent("Controls", _gearTexture);
+        GUILayout.Label(content, _titleStyle);
+        GUILayout.Space(10);
 
         GUILayout.BeginVertical(EditorStyles.helpBox);
         GUILayout.BeginHorizontal();
         GUIContent sliceXContent = new GUIContent("Slice equally X", _sliceXTexture);
-        if (GUILayout.Button(sliceXContent)) SliceEquallyX(service);
+        if (GUILayout.Button(sliceXContent)) SliceEquallyX();
         GUIContent sliceYContent = new GUIContent("Slice equally Y", _sliceYTexture);
-        if (GUILayout.Button(sliceYContent)) SliceEquallyY(service);
+        if (GUILayout.Button(sliceYContent)) SliceEquallyY();
         GUILayout.EndHorizontal();
 
         GUILayout.BeginHorizontal();
-        _allowIntersectionsX = EditorGUILayout.Toggle("Allow Intersections X", _allowIntersectionsX);
-        _allowIntersectionsY = EditorGUILayout.Toggle("Allow Intersections Y", _allowIntersectionsY);
+        _allowIntersectionsX = EditorGUILayout.Toggle("Allow intersections X", _allowIntersectionsX);
+        _allowIntersectionsY = EditorGUILayout.Toggle("Allow intersections Y", _allowIntersectionsY);
         GUILayout.EndHorizontal();
 
         GUILayout.BeginHorizontal();
         GUI.enabled = _allowIntersectionsX;
         GUIContent stretchXContent = new GUIContent("Stretch X", _stretchXTexture);
-        if (GUILayout.Button(stretchXContent)) StretchX(service);
+        if (GUILayout.Button(stretchXContent)) StretchX();
 
         GUI.enabled = _allowIntersectionsY;
         GUIContent stretchYContent = new GUIContent("Stretch X", _stretchYTexture);
-        if (GUILayout.Button(stretchYContent)) StretchY(service);
+        if (GUILayout.Button(stretchYContent)) StretchY();
         GUI.enabled = true;
         GUILayout.EndHorizontal();
         GUILayout.EndVertical();
 
         ApplyRegions(graphRect);
+
+        if (!_resized && Event.current.type == EventType.Repaint)
+        {
+            _resized = true;
+            SliceEquallyX();
+            StretchY();
+            Repaint();
+        }
     }
 
     private Texture2D CaptureCameraPreview(CameraScreenshotService service)
     {
         var cam = service.TargetCamera;
-        if (cam == null)
-            return null;
+        if (cam == null) return null;
 
         int w = service.CaptureResolution.x;
         int h = service.CaptureResolution.y;
@@ -368,8 +437,9 @@ public class CameraScreenshotServiceEditor : Editor
     }
 
     #region Control functions
-    private void StretchX(CameraScreenshotService service)
+    private void StretchX()
     {
+        CameraScreenshotService service = (CameraScreenshotService)target;
         foreach (var h in _handlesPositions.Values)
         {
             h.XMin01 = 0f;
@@ -379,8 +449,9 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-    private void StretchY(CameraScreenshotService service)
+    private void StretchY()
     {
+        CameraScreenshotService service = (CameraScreenshotService)target;
         foreach (var h in _handlesPositions.Values)
         {
             h.YMin01 = 0f;
@@ -390,8 +461,9 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-    private void SliceEquallyX(CameraScreenshotService service)
+    private void SliceEquallyX()
     {
+        CameraScreenshotService service = (CameraScreenshotService)target;
         int count = _handlesPositions.Count;
         if (count == 0) return;
 
@@ -408,8 +480,9 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-    private void SliceEquallyY(CameraScreenshotService service)
+    private void SliceEquallyY()
     {
+        CameraScreenshotService service = (CameraScreenshotService)target;
         int count = _handlesPositions.Count;
         if (count == 0) return;
 

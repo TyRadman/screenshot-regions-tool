@@ -14,16 +14,18 @@ public class CameraScreenshotService : MonoBehaviour
     [Tooltip("Reference the master camera")]
     [field: SerializeField] public Camera TargetCamera {get; private set;}
     // ideally, we will use Screen.width and Screen.height, but this won't work accurately in the editor as the game window resizes based on our window layout.
-    [field: SerializeField] public Vector2Int CaptureResolution { get; private set; } = new Vector2Int(1920, 1080);
-    [field: SerializeField] public ScreenShotData[] Regions { get; set; }
-    [SerializeField] private string _outputFolder = "Screenshots";
+    [HideInInspector] public Vector2Int CaptureResolution = new Vector2Int(1920, 1080);
+    [HideInInspector] public ScreenShotData[] Regions;
+    [HideInInspector] public string OutputFolder = "Screenshots";
 
     private Texture2D _fullScreenshot;
 
+    #region Main API
     public void CaptureRegion(int index)
     {
         if (index < 0 || index >= Regions.Length)
         {
+            Debug.LogError($"[Camera Screenshot Service] Index {index} is out of range. There are {Regions.Length} only.");
             return;
         }
 
@@ -39,6 +41,7 @@ public class CameraScreenshotService : MonoBehaviour
             SaveRegion(i);
         }
     }
+    #endregion
 
     public void ClearCache()
     {
@@ -83,6 +86,12 @@ public class CameraScreenshotService : MonoBehaviour
 
     public void SaveRegion(int index)
     {
+        if(index >= Regions.Length)
+        {
+            Debug.LogError($"[Camera Screenshot Service] Index {index} is out of range. There are {Regions.Length} only.");
+            return;
+        }
+
         CaptureFullIfNeeded();
         ScreenShotData data = Regions[index];
 
@@ -108,19 +117,14 @@ public class CameraScreenshotService : MonoBehaviour
         cropped.SetPixels(pixels);
         cropped.Apply();
 
-        if (!Directory.Exists(_outputFolder))
+        if (!Directory.Exists(OutputFolder))
         {
-            Directory.CreateDirectory(_outputFolder);
+            Directory.CreateDirectory(OutputFolder);
         }
 
-        File.WriteAllBytes(Path.Combine(_outputFolder, $"screenshot_region_{index}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png"), cropped.EncodeToPNG());
+        File.WriteAllBytes(Path.Combine(OutputFolder, $"screenshot_region_{index}_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png"), cropped.EncodeToPNG());
 
-        Debug.Log($"Saved to {_outputFolder}");
+        Debug.Log($"[Camera Screenshot Service] Saved to {OutputFolder}");
         DestroyImmediate(cropped);
-    }
-
-    public void SetResolution(Vector2Int resolution)
-    {
-        CaptureResolution = resolution;
     }
 }
