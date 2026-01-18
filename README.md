@@ -57,6 +57,9 @@ private void OnCaptureRegion()
 ## Output
 The screenshots are saved as PNGs in the output directory.
 
+## Installation
+Download the `UnityPackage` from the release section and import it into the project or copy the `Assets` folder and its content into the project. This is a super lightweight tool, so it's a straightforward process.
+
 ## Contributing
 Suggestions, bug reports, and improvements are welcome :)
 Feel free to open an issue or submit a pull request, though this is intended to be just a little tool that I used and thought would be worth sharing.
