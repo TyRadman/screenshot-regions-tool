@@ -57,8 +57,18 @@ private void OnCaptureRegion()
 ## Output
 The screenshots are saved as PNGs in the output directory.
 
+## Contributing
+Suggestions, bug reports, and improvements are welcome :)
+Feel free to open an issue or submit a pull request, though this is intended to be just a little tool that I used and thought would be worth sharing.
+
+If you use this tool in production or extend it in interesting ways, feedback is appreciated.
+
 ## Future fixes
 * Allow different screenshot formats.
 * Return the screenshots in Unity as `Texture`s.
 * Allow regions sizes to be percentage-based in addition to the pixel-based approach already present.
 * Allow async saving.
+
+## License
+You are free to use, modify, and distribute this tool in any way there is.
+Attribution is appreciated but not required.
