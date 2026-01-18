@@ -6,39 +6,69 @@ using UnityEngine;
 [CustomEditor(typeof(CameraScreenshotService))]
 public class CameraScreenshotServiceEditor : Editor
 {
+    public enum DoubleHandleType
+    {
+        Min, Max,
+    }
+
+    public enum DragMode
+    {
+        Horizontal, Vertical
+    }
+
+    public class HandleData
+    {
+        public float XMin01;
+        public float XMax01;
+        public float YMin01;
+        public float YMax01;
+        public Color Color;
+        public int Index;
+    }
+
     private Vector2Int _resolution = new Vector2Int(1920, 1080);
     static Rect _cachedPreviewRect;
-    private bool _allowIntersectionsX = false;
-    private bool _allowIntersectionsY = true;
-    private Dictionary<ScreenShotData, HandleData> _handlesPositions = new Dictionary<ScreenShotData, HandleData>();
+    private static bool _allowIntersectionsX = false;
+    private static bool _allowIntersectionsY = true;
+    private static Dictionary<ScreenShotData, HandleData> _handlesPositions = new Dictionary<ScreenShotData, HandleData>();
 
     private Texture _stretchXTexture;
     private Texture _stretchYTexture;
     private Texture _sliceXTexture;
     private Texture _sliceYTexture;
 
+    private GUIStyle _titleStyle;
+    private GUIStyle _indexStyle;
+    private GUIStyle _dimStyle;
+    private GUIStyle _arrowLabel;
+
+    private Texture2D _playModePreview;
+    private bool _showPlayModePreview;
+
+    private const float HANDLE_SIZE = 6f;
+
     private static readonly Color[] _sliceColors =
     {
-        new Color(0.90f, 0.30f, 0.30f, 1f), // red
-        new Color(0.30f, 0.60f, 0.90f, 1f), // blue
-        new Color(0.35f, 0.80f, 0.45f, 1f), // green
-        new Color(0.95f, 0.80f, 0.30f, 1f), // yellow
-        new Color(0.75f, 0.45f, 0.90f, 1f), // purple
-        new Color(0.95f, 0.55f, 0.35f, 1f), // orange
-        new Color(0.30f, 0.85f, 0.80f, 1f), // cyan
-        new Color(0.85f, 0.35f, 0.65f, 1f), // magenta
-        new Color(0.60f, 0.60f, 0.60f, 1f), // gray
-        new Color(0.55f, 0.75f, 0.35f, 1f), // lime
-        new Color(0.35f, 0.55f, 0.75f, 1f), // steel blue
-        new Color(0.85f, 0.65f, 0.45f, 1f), // sand
-        new Color(0.65f, 0.45f, 0.35f, 1f), // brown
-        new Color(0.45f, 0.85f, 0.65f, 1f), // mint
-        new Color(0.75f, 0.35f, 0.35f, 1f), // dark red
-        new Color(0.35f, 0.75f, 0.35f, 1f), // dark green
-        new Color(0.35f, 0.35f, 0.75f, 1f), // dark blue
-        new Color(0.85f, 0.85f, 0.45f, 1f), // olive
-        new Color(0.65f, 0.35f, 0.85f, 1f), // violet
-        new Color(0.35f, 0.85f, 0.85f, 1f)  // teal
+        new Color(0.90f, 0.30f, 0.30f, 1f),
+        new Color(0.30f, 0.60f, 0.90f, 1f),
+        new Color(0.35f, 0.80f, 0.45f, 1f),
+        new Color(0.95f, 0.80f, 0.30f, 1f),
+        new Color(0.75f, 0.45f, 0.90f, 1f),
+        new Color(0.95f, 0.55f, 0.35f, 1f),
+        new Color(0.30f, 0.85f, 0.80f, 1f),
+        new Color(0.85f, 0.35f, 0.65f, 1f),
+        new Color(0.60f, 0.60f, 0.60f, 1f),
+        new Color(0.55f, 0.75f, 0.35f, 1f),
+        new Color(0.35f, 0.55f, 0.75f, 1f),
+        new Color(0.85f, 0.65f, 0.45f, 1f),
+        new Color(0.65f, 0.45f, 0.35f, 1f),
+        new Color(0.45f, 0.85f, 0.65f, 1f),
+        new Color(0.75f, 0.35f, 0.35f, 1f),
+        new Color(0.35f, 0.75f, 0.35f, 1f),
+        new Color(0.35f, 0.35f, 0.75f, 1f),
+        new Color(0.85f, 0.85f, 0.45f, 1f),
+        new Color(0.65f, 0.35f, 0.85f, 1f),
+        new Color(0.35f, 0.85f, 0.85f, 1f)
     };
 
     private void OnEnable()
@@ -47,7 +77,29 @@ public class CameraScreenshotServiceEditor : Editor
         _stretchYTexture = GetTexture("Icons/T_Stretch_Y.png");
         _sliceXTexture = GetTexture("Icons/T_Slice_X.png");
         _sliceYTexture = GetTexture("Icons/T_Slice_Y.png");
+
+        EditorApplication.playModeStateChanged += OnPlayModeChanged;
     }
+
+    private void OnDisable()
+    {
+        EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+    }
+
+    private void OnPlayModeChanged(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.ExitingPlayMode)
+        {
+            _showPlayModePreview = false;
+
+            if (_playModePreview != null)
+            {
+                DestroyImmediate(_playModePreview);
+                _playModePreview = null;
+            }
+        }
+    }
+
 
     private Texture GetTexture(string path)
     {
@@ -57,106 +109,172 @@ public class CameraScreenshotServiceEditor : Editor
         return AssetDatabase.LoadAssetAtPath<Texture2D>(iconPath);
     }
 
-    public class HandleData
+    /// <summary>
+    /// Initiates the styles that will be used.
+    /// </summary>
+    private void InitStyles()
     {
-        public float XMin01;
-        public float XMax01;
-        public float YMin01;
-        public float YMax01;
+        if (_titleStyle == null)
+        {
+            _titleStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 18,
+                fontStyle = FontStyle.Bold,
+            };
+        }
 
-        public Color Color;
-        public int Index;
+        if (_indexStyle == null)
+        {
+            _indexStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 18,
+                normal = { textColor = Color.white }
+            };
+        }
+
+        if (_dimStyle == null)
+        {
+            _dimStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                //fontSize = 11,
+                //normal = { textColor = Color.white }
+            };
+        }
+
+        if (_arrowLabel == null)
+        {
+            _arrowLabel = new GUIStyle(EditorStyles.helpBox)
+            {
+                alignment = TextAnchor.MiddleCenter
+            };
+        }
     }
 
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();
 
-        GUILayout.Label("", GUI.skin.horizontalScrollbar);
-        GUILayout.Label("Editor");
-        GUILayout.Space(10);
+        InitStyles();
+
+        GUILayout.Space(20);
+        EditorGUILayout.HelpBox("\nAdd values to the regions list and new regions will appear in the screens graph.\n\nChanging the resolution, adding or removing regions, or using the controls will ruin your layouts. Be careful!\n", MessageType.Info);
+        GUILayout.Space(5);
+        GUILayout.Label("Editor", _titleStyle, GUILayout.MaxWidth(150));
+        GUILayout.Space(30);
         CameraScreenshotService service = (CameraScreenshotService)target;
 
+        // cap the resolution to not have negative values. They act weird
         _resolution = service.CaptureResolution;
-
         _resolution.x = Mathf.Max(_resolution.x, 1);
         _resolution.y = Mathf.Max(_resolution.y, 1);
+        service.SetResolution(_resolution);
 
-        Rect last = ResolutionPreviewDrawer.Draw(_resolution, EditorGUIUtility.currentViewWidth);
+        // draw the graph with the resolution and aspect ratio arrows
+        Rect graphRect = Draw(_resolution, EditorGUIUtility.currentViewWidth);
 
+        // during the layout phase, rects are reset to their default values, so we cache the size intended during the repaint phase and use it during the layout phase
         if (Event.current.type == EventType.Repaint)
         {
-            _cachedPreviewRect = last;
+            _cachedPreviewRect = graphRect;
         }
         else
         {
-            last = _cachedPreviewRect;
+            graphRect = _cachedPreviewRect;
         }
 
-
+        // again, one of the phases corrupts the variables stored here, so we only get them when it's in the repaint phase
         if (Event.current.type == EventType.Repaint)
         {
             LoadDataFromRegionsList();
         }
 
-        float minY = last.y;
-        float maxY = last.y + last.size.y;
-        float minX = last.x;
-        float maxX = last.x + last.size.x;
-
+        // draw handles for regions
         var list = _handlesPositions.ToList();
 
+        // start with horizontal handles
+        for (int i = 0; i < list.Count; i++)
+        {
+            var v = list[i].Value;
+
+            // cache previous and next handles if applicable
+            HandleData prev = i > 0 ? list[i - 1].Value : null;
+            HandleData next = i < list.Count - 1 ? list[i + 1].Value : null;
+
+            // the limit for the handles is the edge of the graph if they have no neighbours or if intersection is allow, otherwise, it's the neighbouring handle is located
+            float allowedMinX = prev == null || _allowIntersectionsX ? graphRect.xMin : Mathf.Lerp(graphRect.xMin, graphRect.xMax, prev.XMax01);
+            float allowedMaxX = next == null || _allowIntersectionsX ? graphRect.xMax : Mathf.Lerp(graphRect.xMin, graphRect.xMax, next.XMin01);
+
+            // get the min and max of the handles in the graph space using the handle data values that range from 0 to 1
+            Vector2 minGUI = new Vector2(Mathf.Lerp(graphRect.xMin, graphRect.xMax, v.XMin01), graphRect.y);
+            Vector2 maxGUI = new Vector2(Mathf.Lerp(graphRect.xMin, graphRect.xMax, v.XMax01), graphRect.y);
+
+            // draw 2 handles for the min and max values
+            DraggableDoubleHandle(ref minGUI, ref maxGUI, DragMode.Horizontal, v.Color, allowedMinX, allowedMaxX);
+
+            // assign the updated positional values from the handles and convert them to 0-1 values
+            v.XMin01 = Mathf.InverseLerp(graphRect.xMin, graphRect.xMax, minGUI.x);
+            v.XMax01 = Mathf.InverseLerp(graphRect.xMin, graphRect.xMax, maxGUI.x);
+        }
+
+        // draw the vertical handles. All plays out same as the horizontal values
         for (int i = 0; i < list.Count; i++)
         {
             var v = list[i].Value;
             HandleData prev = i > 0 ? list[i - 1].Value : null;
             HandleData next = i < list.Count - 1 ? list[i + 1].Value : null;
 
-            float allowedMinX = prev == null || _allowIntersectionsX? minX : prev.XMax01 * last.width + last.x;
-            float allowedMaxX = next == null || _allowIntersectionsX? maxX : next.XMin01 * last.width + last.x;
+            float allowedMinY = prev == null || _allowIntersectionsY ? graphRect.yMin : Mathf.Lerp(graphRect.yMin, graphRect.yMax, prev.YMax01);
+            float allowedMaxY = next == null || _allowIntersectionsY ? graphRect.yMax : Mathf.Lerp(graphRect.yMin, graphRect.yMax, next.YMin01);
 
-            Vector2 minGUI = X01ToGUI(v.XMin01, last, last.y);
-            Vector2 maxGUI = X01ToGUI(v.XMax01, last, last.y);
-            DraggableDoubleHandle(ref minGUI, ref maxGUI, DragMode.Horizontal, v.Color, v.Color, allowedMinX, allowedMaxX);
+            Vector2 minGUI = new Vector2(graphRect.x, Mathf.Lerp(graphRect.yMin, graphRect.yMax, v.YMin01));
+            Vector2 maxGUI = new Vector2(graphRect.x, Mathf.Lerp(graphRect.yMin, graphRect.yMax, v.YMax01));
+            DraggableDoubleHandle(ref minGUI, ref maxGUI, DragMode.Vertical, v.Color, allowedMinY, allowedMaxY);
 
-            v.XMin01 = GUIToX01(minGUI.x, last);
-            v.XMax01 = GUIToX01(maxGUI.x, last);
-        }
-        
-        for (int i = 0; i < list.Count; i++)
-        {
-            var v = list[i].Value;
-            HandleData prev = i > 0 ? list[i - 1].Value : null;
-            HandleData next = i < list.Count - 1 ? list[i + 1].Value : null;
-
-            float allowedMinY = prev == null || _allowIntersectionsY ? minY : prev.YMax01 * last.height + last.y;
-            float allowedMaxY = next == null || _allowIntersectionsY ? maxY : next.YMin01 * last.height + last.y;
-
-            Vector2 minGUI = Y01ToGUI(v.YMin01, last, last.x);
-            Vector2 maxGUI = Y01ToGUI(v.YMax01, last, last.x);
-            DraggableDoubleHandle(ref minGUI, ref maxGUI, DragMode.Vertical, v.Color, v.Color, allowedMinY, allowedMaxY);
-
-
-            v.YMin01 = GUIToY01(minGUI.y, last);
-            v.YMax01 = GUIToY01(maxGUI.y, last);
+            v.YMin01 = Mathf.InverseLerp(graphRect.yMin, graphRect.yMax, minGUI.y);
+            v.YMax01 = Mathf.InverseLerp(graphRect.yMin, graphRect.yMax, maxGUI.y);
         }
 
+        // draw the regions as rects
         foreach (var v in list)
         {
-            DrawSliceFromHandles(v.Value, last);
+            DrawRegionFromHandles(v.Value, graphRect);
         }
 
-        service.SetResolution(_resolution);
+
+        if (Application.isPlaying)
+        {
+            GUILayout.Space(10);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            GUILayout.Label("Play Mode Preview", EditorStyles.boldLabel);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Preview Capture"))
+            {
+                _playModePreview = CaptureCameraPreview((CameraScreenshotService)target);
+                _showPlayModePreview = _playModePreview != null;
+                Repaint();
+            }
+
+            GUI.enabled = _playModePreview != null;
+            if (GUILayout.Button("Clear Preview"))
+            {
+                _playModePreview = null;
+                Repaint();
+            }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+
+            GUILayout.Space(10);
+        }
 
         GUILayout.Space(10);
 
-        GUILayout.BeginVertical(EditorStyles.helpBox);
-        GUILayout.BeginHorizontal();
-        GUILayout.FlexibleSpace();
-        GUILayout.FlexibleSpace();
-        GUILayout.EndHorizontal();
-        GUILayout.EndVertical();
-
+        // render the controls
         GUILayout.Label("", GUI.skin.horizontalScrollbar);
         GUILayout.Label("Controls");
 
@@ -183,12 +301,43 @@ public class CameraScreenshotServiceEditor : Editor
         if (GUILayout.Button(stretchYContent)) StretchY(service);
         GUI.enabled = true;
         GUILayout.EndHorizontal();
-
         GUILayout.EndVertical();
 
-        ApplyRegions(service, last);
+        ApplyRegions(graphRect);
     }
 
+    private Texture2D CaptureCameraPreview(CameraScreenshotService service)
+    {
+        var cam = service.TargetCamera;
+        if (cam == null)
+            return null;
+
+        int w = service.CaptureResolution.x;
+        int h = service.CaptureResolution.y;
+
+        var rt = RenderTexture.GetTemporary(w, h, 24, RenderTextureFormat.ARGB32);
+        var prevRT = RenderTexture.active;
+        var prevCamRT = cam.targetTexture;
+
+        cam.targetTexture = rt;
+        RenderTexture.active = rt;
+        cam.Render();
+
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+        tex.Apply();
+
+        cam.targetTexture = prevCamRT;
+        RenderTexture.active = prevRT;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return tex;
+    }
+
+
+    /// <summary>
+    /// Populate handle data from regions.
+    /// </summary>
     private void LoadDataFromRegionsList()
     {
         CameraScreenshotService service = (CameraScreenshotService)target;
@@ -209,7 +358,7 @@ public class CameraScreenshotServiceEditor : Editor
                     XMax01 = res.x > 0 ? (float)r.PixelsWidth.y / res.x : 0f,
                     YMin01 = res.y > 0 ? (float)r.PixelsHeight.x / res.y : 0f,
                     YMax01 = res.y > 0 ? (float)r.PixelsHeight.y / res.y : 0f,
-                    Color = i < _sliceColors.Length - 1 ? _sliceColors[i] : Random.ColorHSV(0f, 1f, 0.6f, 1f, 0.6f, 1f),
+                    Color = i < _sliceColors.Length - 1 ? _sliceColors[i] : Random.ColorHSV(),
                     Index = i + 1
                 };
 
@@ -218,7 +367,8 @@ public class CameraScreenshotServiceEditor : Editor
         }
     }
 
-    void StretchX(CameraScreenshotService service)
+    #region Control functions
+    private void StretchX(CameraScreenshotService service)
     {
         foreach (var h in _handlesPositions.Values)
         {
@@ -228,7 +378,8 @@ public class CameraScreenshotServiceEditor : Editor
 
         EditorUtility.SetDirty(service);
     }
-    void StretchY(CameraScreenshotService service)
+
+    private void StretchY(CameraScreenshotService service)
     {
         foreach (var h in _handlesPositions.Values)
         {
@@ -239,7 +390,7 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-    void SliceEquallyX(CameraScreenshotService service)
+    private void SliceEquallyX(CameraScreenshotService service)
     {
         int count = _handlesPositions.Count;
         if (count == 0) return;
@@ -257,7 +408,7 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-    void SliceEquallyY(CameraScreenshotService service)
+    private void SliceEquallyY(CameraScreenshotService service)
     {
         int count = _handlesPositions.Count;
         if (count == 0) return;
@@ -274,11 +425,17 @@ public class CameraScreenshotServiceEditor : Editor
 
         EditorUtility.SetDirty(service);
     }
+    #endregion
 
-    void ApplyRegions(CameraScreenshotService service, Rect previewRect)
+    /// <summary>
+    /// Updates region values based on the handles' data.
+    /// </summary>
+    /// <param name="service"></param>
+    /// <param name="previewRect"></param>
+    private void ApplyRegions(Rect previewRect)
     {
+        CameraScreenshotService service = (CameraScreenshotService)target;
         Vector2Int resolution = service.CaptureResolution;
-
         var list = _handlesPositions.ToList();
 
         for (int i = 0; i < list.Count; i++)
@@ -286,16 +443,10 @@ public class CameraScreenshotServiceEditor : Editor
             ScreenShotData region = list[i].Key;
             HandleData h = list[i].Value;
 
-            int xMin = Mathf.RoundToInt(h.XMin01 * resolution.x);
-            int xMax = Mathf.RoundToInt(h.XMax01 * resolution.x);
-            int yMin = Mathf.RoundToInt(h.YMin01 * resolution.y);
-            int yMax = Mathf.RoundToInt(h.YMax01 * resolution.y);
-
-            // Safety clamp
-            xMin = Mathf.Clamp(xMin, 0, resolution.x);
-            xMax = Mathf.Clamp(xMax, 0, resolution.x);
-            yMin = Mathf.Clamp(yMin, 0, resolution.y);
-            yMax = Mathf.Clamp(yMax, 0, resolution.y);
+            int xMin = Mathf.Clamp(Mathf.RoundToInt(h.XMin01 * resolution.x), 0, resolution.x);
+            int xMax = Mathf.Clamp(Mathf.RoundToInt(h.XMax01 * resolution.x), 0, resolution.x);
+            int yMin = Mathf.Clamp(Mathf.RoundToInt(h.YMin01 * resolution.y), 0, resolution.y);
+            int yMax = Mathf.Clamp(Mathf.RoundToInt(h.YMax01 * resolution.y), 0, resolution.y);
 
             region.PixelsWidth = new Vector2Int(xMin, xMax);
             region.PixelsHeight = new Vector2Int(yMin, yMax);
@@ -304,34 +455,12 @@ public class CameraScreenshotServiceEditor : Editor
         EditorUtility.SetDirty(service);
     }
 
-
-    static Vector2 X01ToGUI(float x01, Rect r, float y)
-    {
-        return new Vector2(
-            Mathf.Lerp(r.xMin, r.xMax, x01),
-            y
-        );
-    }
-
-    static Vector2 Y01ToGUI(float y01, Rect r, float x)
-    {
-        return new Vector2(
-            x,
-            Mathf.Lerp(r.yMin, r.yMax, y01)
-        );
-    }
-
-    static float GUIToX01(float x, Rect r)
-    {
-        return Mathf.InverseLerp(r.xMin, r.xMax, x);
-    }
-
-    static float GUIToY01(float y, Rect r)
-    {
-        return Mathf.InverseLerp(r.yMin, r.yMax, y);
-    }
-
-    static void DrawSliceFromHandles(HandleData h, Rect previewRect)
+    /// <summary>
+    /// Draws a region based on the handle data and the parent graph rect.
+    /// </summary>
+    /// <param name="h"></param>
+    /// <param name="previewRect"></param>
+    private void DrawRegionFromHandles(HandleData h, Rect previewRect)
     {
         if (Event.current.type != EventType.Repaint)
         {
@@ -347,63 +476,61 @@ public class CameraScreenshotServiceEditor : Editor
 
         Color c = h.Color;
         c.a = 0.25f;
+
         EditorGUI.DrawRect(r, c);
+        GUI.Label(r, h.Index.ToString(), _indexStyle);
 
-        GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
-        style.alignment = TextAnchor.MiddleCenter;
-        style.fontSize = 18;
-        style.normal.textColor = Color.white;
+        int widthPx = Mathf.RoundToInt((h.XMax01 - h.XMin01) * _resolution.x);
+        int heightPx = Mathf.RoundToInt((h.YMax01 - h.YMin01) * _resolution.y);
 
-        GUI.Label(r, h.Index.ToString(), style);
+        Rect dimRect = r;
+        dimRect.center += Vector2.up * (_indexStyle.lineHeight * 0.75f);
+
+        GUI.Label(dimRect, $"{widthPx}px × {heightPx}px", _dimStyle);
     }
 
-    static void DraggableDoubleHandle(
-            ref Vector2 min,
-            ref Vector2 max,
-            DragMode mode,
-            Color minColor,
-            Color maxColor,
-            float axisMin,
-            float axisMax,
-            float size = 6f)
+    /// <summary>
+    /// Draw two handles that define the min and max values of a region.
+    /// </summary>
+    /// <param name="min">The 2D position of the min handle</param>
+    /// <param name="max">The 2D position of the max handle</param>
+    /// <param name="mode">Whether it's horizontal or vertical</param>
+    /// <param name="color">The color of the handles</param>
+    /// <param name="axisMin">The chosen axis' minimum value</param>
+    /// <param name="axisMax">The chosen axis' maximum value</param>
+    private void DraggableDoubleHandle(ref Vector2 min, ref Vector2 max, DragMode mode, Color color, float axisMin, float axisMax)
     {
-        // MIN handle: cannot go past MAX
-        min = DraggableHandle(
-            min,
-            mode,
-            minColor,
+        min = DraggableHandle(DoubleHandleType.Min, min, mode, color,
             XMin: mode == DragMode.Horizontal ? axisMin : float.NaN,
             XMax: mode == DragMode.Horizontal ? max.x : float.NaN,
             YMin: mode == DragMode.Vertical ? axisMin : float.NaN,
-            YMax: mode == DragMode.Vertical ? max.y : float.NaN,
-            size: size
+            YMax: mode == DragMode.Vertical ? max.y : float.NaN
         );
 
-        // MAX handle: cannot go below MIN
-        max = DraggableHandle(
-            max,
-            mode,
-            maxColor,
+        max = DraggableHandle(DoubleHandleType.Max, max, mode, color,
             XMin: mode == DragMode.Horizontal ? min.x : float.NaN,
             XMax: mode == DragMode.Horizontal ? axisMax : float.NaN,
             YMin: mode == DragMode.Vertical ? min.y : float.NaN,
-            YMax: mode == DragMode.Vertical ? axisMax : float.NaN,
-            size: size
+            YMax: mode == DragMode.Vertical ? axisMax : float.NaN
         );
     }
 
-
-    public enum DragMode
-    {
-        Horizontal, Vertical, Both
-    }
-
-    static Vector2 DraggableHandle(Vector2 pos, DragMode mode, Color color, float XMin = float.NaN, float XMax = float.NaN, float YMin = float.NaN, float YMax = float.NaN, float size = 6f)
+    private Vector2 DraggableHandle(DoubleHandleType handleType, Vector2 pos, DragMode mode, Color color, float XMin = float.NaN, float XMax = float.NaN, float YMin = float.NaN, float YMax = float.NaN)
     {
         int id = GUIUtility.GetControlID(FocusType.Passive);
-
         float visualOffset = 10f;
-        Rect r = new Rect(pos - Vector2.one * size, Vector2.one * size * 2);
+        Vector2 handlePos = pos;
+
+        if (mode == DragMode.Horizontal)
+        {
+            handlePos.x += handleType == DoubleHandleType.Min ? HANDLE_SIZE : -HANDLE_SIZE;
+        }
+        else
+        {
+            handlePos.y += handleType == DoubleHandleType.Min ? HANDLE_SIZE : -HANDLE_SIZE;
+        }
+
+        Rect r = new Rect(handlePos - Vector2.one * HANDLE_SIZE, Vector2.one * HANDLE_SIZE * 2);
         r.position += mode == DragMode.Horizontal ? Vector2.down * visualOffset : Vector2.left * visualOffset;
 
         Event e = Event.current;
@@ -418,7 +545,6 @@ public class CameraScreenshotServiceEditor : Editor
                     e.Use();
                 }
                 break;
-
             case EventType.MouseDrag:
                 if (GUIUtility.hotControl == id)
                 {
@@ -426,7 +552,6 @@ public class CameraScreenshotServiceEditor : Editor
                     e.Use();
                 }
                 break;
-
             case EventType.MouseUp:
                 if (GUIUtility.hotControl == id)
                 {
@@ -434,51 +559,31 @@ public class CameraScreenshotServiceEditor : Editor
                     e.Use();
                 }
                 break;
-
             case EventType.Repaint:
-                EditorGUI.DrawRect(r, color);
+                //EditorGUI.DrawRect(r, color);
+                Vector2 triangleCenter = r.center;
+                DrawTriangleHandle(triangleCenter, mode, handleType, HANDLE_SIZE, color);
+
                 break;
         }
 
         r.position -= mode == DragMode.Horizontal ? Vector2.up * visualOffset : Vector2.left * visualOffset;
 
-        if (mode != DragMode.Both)
-        {
-            pos.x = mode == DragMode.Horizontal ? pos.x : originalPos.x;
-            pos.y = mode == DragMode.Vertical ? pos.y : originalPos.y;
-        }
+        pos.x = mode == DragMode.Horizontal ? pos.x : originalPos.x;
+        pos.y = mode == DragMode.Vertical ? pos.y : originalPos.y;
 
-        if (!float.IsNaN(XMin))
-        {
-            pos.x = Mathf.Max(pos.x, XMin);
-        }
-
-        if (!float.IsNaN(XMax))
-        {
-            pos.x = Mathf.Min(pos.x, XMax);
-        }
-
-        if (!float.IsNaN(YMin))
-        {
-            pos.y = Mathf.Max(pos.y, YMin);
-        }
-
-        if (!float.IsNaN(YMax))
-        {
-            pos.y = Mathf.Min(pos.y, YMax);
-        }
+        if (!float.IsNaN(XMin)) pos.x = Mathf.Max(pos.x, XMin);
+        if (!float.IsNaN(XMax)) pos.x = Mathf.Min(pos.x, XMax);
+        if (!float.IsNaN(YMin)) pos.y = Mathf.Max(pos.y, YMin);
+        if (!float.IsNaN(YMax)) pos.y = Mathf.Min(pos.y, YMax);
 
         return pos;
     }
 
-}
-
-public class ResolutionPreviewDrawer
-{
-    public static Rect Draw(Vector2 resolution,  float editorWidth)
+    private Rect Draw(Vector2 resolution,  float editorWidth)
     {
         float arrowsOffset = 30f;
-        editorWidth *= 0.8f;
+        editorWidth *= 0.8f; // add padding to the graph. Temp
         float aspect = resolution.x / resolution.y;
         float width = editorWidth;
         float height = width / aspect;
@@ -490,63 +595,42 @@ public class ResolutionPreviewDrawer
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
 
-        EditorGUI.DrawRect(r, new Color(0.15f, 0.15f, 0.15f));
+        //EditorGUI.DrawRect(r, new Color(0.15f, 0.15f, 0.15f));
+        bool hasPreview = Application.isPlaying && _showPlayModePreview && _playModePreview != null;
+        if (hasPreview)
+        {
+            GUI.DrawTexture(r, _playModePreview, ScaleMode.StretchToFill);
+        }
+        else
+        {
+            EditorGUI.DrawRect(r, new Color(0.15f, 0.15f, 0.15f));
+        }
 
-        Handles.BeginGUI();
+        // an outline around the graph area
+        Handles.DrawLine(new Vector3(r.xMin, r.yMin), new Vector3(r.xMax, r.yMin));
+        Handles.DrawLine(new Vector3(r.xMax, r.yMin), new Vector3(r.xMax, r.yMax));
+        Handles.DrawLine(new Vector3(r.xMax, r.yMax), new Vector3(r.xMin, r.yMax));
+        Handles.DrawLine(new Vector3(r.xMin, r.yMax), new Vector3(r.xMin, r.yMin));
 
-        Handles.color = Color.white;
-        Handles.DrawAAPolyLine(
-            2,
-            new Vector3(r.xMin, r.yMin),
-            new Vector3(r.xMax, r.yMin),
-            new Vector3(r.xMax, r.yMax),
-            new Vector3(r.xMin, r.yMax),
-            new Vector3(r.xMin, r.yMin)
-        );
+        // horizontal
+        DrawArrow2D(new Vector2(r.xMin, r.yMin - arrowsOffset), new Vector2(r.xMax, r.yMin - arrowsOffset), $"{resolution.x} px", 0f);
+        // vertical
+        DrawArrow2D(new Vector2(r.xMin - arrowsOffset, r.yMin), new Vector2(r.xMin - arrowsOffset, r.yMax), $"{resolution.y} px", -90);
 
-        // Horizontal
-        DrawArrow2D(
-            new Vector2(r.xMin, r.yMin - arrowsOffset),
-            new Vector2(r.xMax, r.yMin - arrowsOffset),
-            $"{resolution.x} px", 0f
-        );
-
-        // Vertical
-        DrawArrow2D(
-            new Vector2(r.xMin - arrowsOffset, r.yMin),
-            new Vector2(r.xMin - arrowsOffset, r.yMax),
-            $"{resolution.y} px", -90
-        );
-
-        float ratioW = resolution.x / GCD(resolution.x, resolution.y);
-        float ratioH = resolution.y / GCD(resolution.x, resolution.y); 
-        float angle = Mathf.Atan2(ratioH, ratioW) * Mathf.Rad2Deg;
-
-        // Diagonal
-        DrawArrow2D(
-            r.min,
-            r.max,
-            $"{ratioW} : {ratioH}", angle
-        );
-
-        Handles.EndGUI();
+        if (!hasPreview)
+        {
+            // diagonal
+            float ratioW = resolution.x / GCD(resolution.x, resolution.y);
+            float ratioH = resolution.y / GCD(resolution.x, resolution.y);
+            float angle = Mathf.Atan2(ratioH, ratioW) * Mathf.Rad2Deg;
+            DrawArrow2D(r.min, r.max, $"{ratioW} : {ratioH}", angle);
+        }
 
         return r;
     }
 
-    static float GCD(float a, float b)
-    {
-        while (b != 0)
-        {
-            float temp = b;
-            b = a % b;
-            a = temp;
-        }
-
-        return a;
-    }
-
-    static void DrawArrow2D(Vector2 a, Vector2 b, string label, float labelAngle)
+    #region Utils
+    private void DrawArrow2D(Vector2 a, Vector2 b, string label, float labelAngle)
     {
         float headSize = 6f;
         Handles.DrawLine(a, b);
@@ -569,29 +653,79 @@ public class ResolutionPreviewDrawer
         Vector2 size = new Vector2(100, 20);
         Rect rect = new Rect(mid - size * 0.5f, size);
 
-        GUIStyle style = new GUIStyle(EditorStyles.helpBox)
-        {
-            alignment = TextAnchor.MiddleCenter
-        };
-
-        DrawRotatedLabel(rect, label, labelAngle, style);
-
-    }
-
-    static void DrawRotatedLabel(Rect rect, string text, float angle, GUIStyle style)
-    {
+        // label stuff
         Color color = Color.gray * 0.5f;
         color.a = 1f;
-
         Matrix4x4 old = GUI.matrix;
-
         Vector2 pivot = rect.center;
-        GUIUtility.RotateAroundPivot(angle, pivot);
-
+        GUIUtility.RotateAroundPivot(labelAngle, pivot);
         EditorGUI.DrawRect(rect, color);
-        GUI.Label(rect, text, style);
-
+        GUI.Label(rect, label, _arrowLabel);
         GUI.matrix = old;
     }
-}
 
+    private static float GCD(float a, float b)
+    {
+        while (b != 0)
+        {
+            float temp = b;
+            b = a % b;
+            a = temp;
+        }
+
+        return a;
+    }
+
+    private void DrawTriangleHandle(Vector2 center, DragMode mode, DoubleHandleType type, float size, Color color)
+    {
+        Vector3[] pts;
+        // draw the triangles based on the mode and handle type
+        if (mode == DragMode.Horizontal)
+        {
+            if (type == DoubleHandleType.Min)
+            {
+                pts = new[]
+                {
+                new Vector3(center.x + size, center.y),
+                new Vector3(center.x - size, center.y - size),
+                new Vector3(center.x - size, center.y + size),
+            };
+            }
+            else
+            {
+                pts = new[]
+                {
+                new Vector3(center.x - size, center.y),
+                new Vector3(center.x + size, center.y - size),
+                new Vector3(center.x + size, center.y + size),
+            };
+            }
+        }
+        else
+        {
+            if (type == DoubleHandleType.Min)
+            {
+                pts = new[]
+                {
+                new Vector3(center.x, center.y + size),
+                new Vector3(center.x - size, center.y - size),
+                new Vector3(center.x + size, center.y - size),
+            };
+            }
+            else
+            {
+                pts = new[]
+                {
+                new Vector3(center.x, center.y - size),
+                new Vector3(center.x - size, center.y + size),
+                new Vector3(center.x + size, center.y + size),
+            };
+            }
+        }
+
+        Handles.color = color;
+        Handles.DrawAAConvexPolygon(pts);
+    }
+
+    #endregion
+}

@@ -2,7 +2,7 @@ using UnityEngine;
 using System.IO;
 using System;
 
-[System.Serializable]
+[Serializable]
 public class ScreenShotData
 {
     public Vector2Int PixelsWidth;
@@ -11,12 +11,11 @@ public class ScreenShotData
 
 public class CameraScreenshotService : MonoBehaviour
 {
-    [Header("Capture")]
     [Tooltip("Reference the master camera")]
-    [SerializeField] private Camera _targetCamera;
+    [field: SerializeField] public Camera TargetCamera {get; private set;}
     // ideally, we will use Screen.width and Screen.height, but this won't work accurately in the editor as the game window resizes based on our window layout.
     [field: SerializeField] public Vector2Int CaptureResolution { get; private set; } = new Vector2Int(1920, 1080);
-    [field: SerializeField] public ScreenShotData[] Regions { get; private set; }
+    [field: SerializeField] public ScreenShotData[] Regions { get; set; }
     [SerializeField] private string _outputFolder = "Screenshots";
 
     private Texture2D _fullScreenshot;
@@ -67,16 +66,16 @@ public class CameraScreenshotService : MonoBehaviour
             filterMode = FilterMode.Point
         };
 
-        _targetCamera.targetTexture = rt;
+        TargetCamera.targetTexture = rt;
 
         _fullScreenshot = new Texture2D(width, height, TextureFormat.RGB24, false);
 
-        _targetCamera.Render();
+        TargetCamera.Render();
         RenderTexture.active = rt;
         _fullScreenshot.ReadPixels(new Rect(0, 0, width, height), 0, 0);
         _fullScreenshot.Apply();
 
-        _targetCamera.targetTexture = null;
+        TargetCamera.targetTexture = null;
         RenderTexture.active = null;
 
         DestroyImmediate(rt);
@@ -124,64 +123,4 @@ public class CameraScreenshotService : MonoBehaviour
     {
         CaptureResolution = resolution;
     }
-
-#if UNITY_EDITOR
-    [Header("Editor Slicing")]
-    [SerializeField, Min(1)] private int slicesCount = 2;
-    [SerializeField] private bool horizontal = true;
-
-    [ContextMenu("Generate Regions From Slices")]
-    private void GenerateRegions()
-    {
-        if (slicesCount <= 0)
-        {
-            Regions = System.Array.Empty<ScreenShotData>();
-            return;
-        }
-
-        Regions = new ScreenShotData[slicesCount];
-
-        int totalWidth = CaptureResolution.x;
-        int totalHeight = CaptureResolution.y;
-
-        if (horizontal)
-        {
-            int sliceWidth = totalWidth / slicesCount;
-
-            for (int i = 0; i < slicesCount; i++)
-            {
-                int startX = i * sliceWidth;
-                int endX = (i == slicesCount - 1)
-                    ? totalWidth
-                    : startX + sliceWidth;
-
-                Regions[i] = new ScreenShotData
-                {
-                    PixelsWidth = new Vector2Int(startX, endX),
-                    PixelsHeight = new Vector2Int(0, totalHeight)
-                };
-            }
-        }
-        else
-        {
-            int sliceHeight = totalHeight / slicesCount;
-
-            for (int i = 0; i < slicesCount; i++)
-            {
-                int startY = i * sliceHeight;
-                int endY = (i == slicesCount - 1)
-                    ? totalHeight
-                    : startY + sliceHeight;
-
-                Regions[i] = new ScreenShotData
-                {
-                    PixelsWidth = new Vector2Int(0, totalWidth),
-                    PixelsHeight = new Vector2Int(startY, endY)
-                };
-            }
-        }
-
-        UnityEditor.EditorUtility.SetDirty(this);
-    }
-#endif
 }
