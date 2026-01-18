@@ -13,7 +13,7 @@ Designed for workflows where you need consistent, repeatable screenshot crops.
 * Set the configurations.<br>
 ![alt text](ReadmeResources/Configurations.png)<br><br>
 * Regions are visualized in the inspector as colored rectangles.
-* Drag the edge handles to resize regions
+* Drag the edge handles to resize regions.<br>
 ![Screenshot](ReadmeResources/Regions.png)<br><br>
 * Use the controls to slice regions evenly, stretch regions and allow or not allow intersections between regions.
 ![alt text](ReadmeResources/Controls.png)<br><br>
